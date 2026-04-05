@@ -12,6 +12,8 @@ import java.util.Locale;
 public final class AllianceHitboxConfigOptionProvider implements ConfigOptionProvider {
    @Override
    public void registerOptions(ConfigOptionCollector collector) {
+      AllianceNameRenderHandler.refreshPrefixCandidatesNow();
+
       for (AllianceNameRenderHandler.HitboxAllianceCandidate candidate : AllianceNameRenderHandler.getHitboxCandidates()) {
          String allianceId = candidate.allianceId();
          String defaultColor = AllianceHitboxColorResolver.normalizeConfigColor(candidate.color());

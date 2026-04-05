@@ -150,62 +150,8 @@ public final class AllianceNameRenderHandler {
 
    private static void updatePrefixCandidates(List<Alliance> alliances) {
       try {
-         Minecraft minecraft = Minecraft.getInstance();
-         if (minecraft.player == null) {
-            cachedPrefixCandidates = List.of();
-            return;
-         }
-
-         String selfUuid = normalizeUuid(minecraft.player.getStringUUID());
-         if (selfUuid.isBlank()) {
-            cachedPrefixCandidates = List.of();
-            return;
-         }
-
-         List<PrefixCandidate> candidates = new ArrayList<>();
-         for (Alliance alliance : alliances) {
-            if (alliance == null || alliance.id() == null || alliance.id().isBlank()) {
-               continue;
-            }
-            String prefix = alliance.prefix();
-            AllianceMember selfMember = null;
-            if (alliance.isModern()) {
-               selfMember = alliance.members().stream()
-                       .filter(Objects::nonNull)
-                       .filter(member -> normalizeUuid(member.uuid()).equalsIgnoreCase(selfUuid))
-                       .findFirst()
-                       .orElse(null);
-            }
-
-            List<String> memberUuids = alliance.members().stream()
-                    .filter(Objects::nonNull)
-                    .map(AllianceMember::uuid)
-                    .map(AllianceNameRenderHandler::normalizeUuid)
-                    .filter(id -> !id.isBlank())
-                    .distinct()
-                    .collect(Collectors.toList());
-
-            String ownerDisplayName = alliance.members().stream()
-                    .filter(Objects::nonNull)
-                    .filter(member -> normalizeUuid(member.uuid()).equalsIgnoreCase(normalizeUuid(alliance.ownedBy())))
-                    .map(AllianceMember::cachedName)
-                    .filter(name -> name != null && !name.isBlank())
-                    .findFirst()
-                    .orElse(alliance.name());
-
-            String displayName = ownerDisplayName.equalsIgnoreCase(alliance.name())
-                    ? alliance.name()
-                    : ownerDisplayName + " - " + alliance.name();
-
-            long joinedAtMillis = selfMember != null
-                    ? selfMember.addedAt().toEpochMilli()
-                    : alliance.createdAt().toEpochMilli();
-
-            candidates.add(new PrefixCandidate(alliance.id(), displayName, prefix, alliance.color(), joinedAtMillis, memberUuids));
-         }
-
-         candidates.sort(Comparator.comparingLong(PrefixCandidate::joinedAtMillis).reversed());
-         cachedPrefixCandidates = List.copyOf(candidates);
+         List<PrefixCandidate> candidates = buildPrefixCandidates(alliances);
+         cachedPrefixCandidates = candidates;
          syncPrefixPriorityConfig(candidates);
       } finally {
          finishPrefixRefresh();
@@ -273,9 +219,15 @@ public final class AllianceNameRenderHandler {
    }
 
    public static List<HitboxAllianceCandidate> getHitboxCandidates() {
-      return cachedPrefixCandidates.stream()
-              .map(candidate -> new HitboxAllianceCandidate(candidate.allianceId(), candidate.displayName(), candidate.color()))
-              .toList();
+      List<PrefixCandidate> cachedAlliances = buildPrefixCandidates(AllianceManagers.getCachedPlayerAlliancesSnapshot());
+      if (!cachedAlliances.isEmpty()) {
+         return toHitboxCandidates(cachedAlliances);
+      }
+
+      if (cachedPrefixCandidates.isEmpty()) {
+         refreshPrefixCandidatesNow();
+      }
+      return toHitboxCandidates(cachedPrefixCandidates);
    }
 
    public static HitboxAllianceCandidate resolveHitboxCandidate(String playerUuid) {
@@ -361,6 +313,70 @@ public final class AllianceNameRenderHandler {
       }
 
       return null;
+   }
+
+   private static List<PrefixCandidate> buildPrefixCandidates(List<Alliance> alliances) {
+      Minecraft minecraft = Minecraft.getInstance();
+      if (minecraft.player == null || alliances == null || alliances.isEmpty()) {
+         return List.of();
+      }
+
+      String selfUuid = normalizeUuid(minecraft.player.getStringUUID());
+      if (selfUuid.isBlank()) {
+         return List.of();
+      }
+
+      List<PrefixCandidate> candidates = new ArrayList<>();
+      for (Alliance alliance : alliances) {
+         if (alliance == null || alliance.id() == null || alliance.id().isBlank()) {
+            continue;
+         }
+
+         String prefix = alliance.prefix();
+         AllianceMember selfMember = null;
+         if (alliance.isModern()) {
+            selfMember = alliance.members().stream()
+                    .filter(Objects::nonNull)
+                    .filter(member -> normalizeUuid(member.uuid()).equalsIgnoreCase(selfUuid))
+                    .findFirst()
+                    .orElse(null);
+         }
+
+         List<String> memberUuids = alliance.members().stream()
+                 .filter(Objects::nonNull)
+                 .map(AllianceMember::uuid)
+                 .map(AllianceNameRenderHandler::normalizeUuid)
+                 .filter(id -> !id.isBlank())
+                 .distinct()
+                 .collect(Collectors.toList());
+
+         String ownerDisplayName = alliance.members().stream()
+                 .filter(Objects::nonNull)
+                 .filter(member -> normalizeUuid(member.uuid()).equalsIgnoreCase(normalizeUuid(alliance.ownedBy())))
+                 .map(AllianceMember::cachedName)
+                 .filter(name -> name != null && !name.isBlank())
+                 .findFirst()
+                 .orElse(alliance.name());
+
+         String displayName = ownerDisplayName.equalsIgnoreCase(alliance.name())
+                 ? alliance.name()
+                 : ownerDisplayName + " - " + alliance.name();
+
+         long joinedAtMillis = selfMember != null
+                 ? selfMember.addedAt().toEpochMilli()
+                 : alliance.createdAt().toEpochMilli();
+
+         candidates.add(new PrefixCandidate(alliance.id(), displayName, prefix, alliance.color(), joinedAtMillis, memberUuids));
+      }
+
+      candidates.sort(Comparator.comparingLong(PrefixCandidate::joinedAtMillis).reversed());
+      return List.copyOf(candidates);
+   }
+
+   private static List<HitboxAllianceCandidate> toHitboxCandidates(List<PrefixCandidate> candidates) {
+      return candidates.stream()
+              .map(candidate -> new HitboxAllianceCandidate(candidate.allianceId(), candidate.displayName(), candidate.color()))
+              .toList();
    }
 
    private static Component colorizeNameTag(Component original, String colorTag) {

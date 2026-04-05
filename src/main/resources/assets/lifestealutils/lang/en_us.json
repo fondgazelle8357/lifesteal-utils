@@ -243,6 +243,7 @@
   "lsu.alliances.select.required": "<red>Please provide an alliance name.</red>",
   "lsu.alliances.select.none": "<red>We're not sure which alliance you want to add this player to! Please select an alliance first with /lsu alliances select <alliance name>.</red>",
   "lsu.alliances.select.stale": "<red>Your selected alliance no longer exists. Select another with /lsu alliances select <alliance name>.</red>",
+  "lsu.alliances.select.unavailable": "<red>Your selected alliance can't be used for quick ally actions. Select one you can manage with /lsu alliances select <alliance name>.</red>",
   "lsu.alliances.select.add_success": "<green>Added <white>%s</white> to <white>%s</white>.</green>",
   "lsu.alliances.select.add_failed": "<red>Couldn't add <white>%s</white> to <white>%s</white>.</red>",
   "lsu.alliances.select.remove_success": "<green>Removed <white>%s</white> from <white>%s</white>.</green>",

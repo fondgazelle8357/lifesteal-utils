@@ -116,8 +116,6 @@ public class Config {
    @ConfigurableList(location = "alliances.allianceprefixpriority")
    private static List<String> alliancePrefixPriority = new ArrayList<>();
 
-   @Getter
-   @Setter
    @SerialEntry(comment = "Selected alliance id used by quick-add actions")
    private static String selectedAllianceId = "";
 
@@ -375,8 +373,45 @@ public class Config {
    public static void load() {
       FeatureFlagController.ensureLoaded();
       HANDLER.load();
+      normalizeSelectedAllianceId();
       enforceGaiaConsentDependentStates();
       ensureLocalAllianceMigration();
+   }
+
+   public static String getSelectedAllianceId() {
+      return sanitizeSelectedAllianceId(selectedAllianceId);
+   }
+
+   public static void setSelectedAllianceId(String allianceId) {
+      selectedAllianceId = sanitizeSelectedAllianceId(allianceId);
+      HANDLER.save();
+   }
+
+   public static boolean hasSelectedAllianceId() {
+      return !getSelectedAllianceId().isBlank();
+   }
+
+   private static void normalizeSelectedAllianceId() {
+      String sanitized = sanitizeSelectedAllianceId(selectedAllianceId);
+      if ((selectedAllianceId == null ? "" : selectedAllianceId).equals(sanitized)) {
+         return;
+      }
+
+      selectedAllianceId = sanitized;
+      HANDLER.save();
+   }
+
+   private static String sanitizeSelectedAllianceId(String allianceId) {
+      if (allianceId == null) {
+         return "";
+      }
+
+      String trimmed = allianceId.trim();
+      if (trimmed.isEmpty() || trimmed.equalsIgnoreCase("NotSet")) {
+         return "";
+      }
+
+      return trimmed;
    }
 
    /**

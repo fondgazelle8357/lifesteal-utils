@@ -7,8 +7,9 @@ import dev.candycup.lifestealutils.ui.framework.core.UiInputState;
 import dev.candycup.lifestealutils.ui.framework.core.UiLayoutContext;
 import dev.candycup.lifestealutils.ui.framework.core.UiSize;
 import dev.candycup.lifestealutils.ui.framework.screens.DrawableScreen;
-import dev.candycup.lifestealutils.gaia.AlliancesAPIClient;
 import dev.candycup.lifestealutils.features.alliances.models.Alliance;
+import dev.candycup.lifestealutils.features.alliances.models.AllianceType;
+import dev.candycup.lifestealutils.features.alliances.service.AllianceManagers;
 import dev.candycup.lifestealutils.interapi.MessagingUtils;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.components.EditBox;
@@ -183,7 +184,7 @@ public class CreateAllianceScreen extends DrawableScreen {
       String motd = motdField.getValue().trim();
 
       setCreatingState(true);
-      AlliancesAPIClient.createAlliance(name, prefix.isEmpty() ? null : prefix, color.isEmpty() ? null : color, description, motd).thenAccept(alliance -> {
+      AllianceManagers.createAlliance(AllianceType.MODERN, name, prefix.isEmpty() ? null : prefix, color.isEmpty() ? null : color, description, motd).thenAccept(alliance -> {
          this.minecraft.execute(() -> handleCreateResult(alliance));
       });
    }

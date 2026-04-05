@@ -30,7 +30,7 @@ public final class AllianceSelectionController {
       return AllianceManagers.fetchPlayerAlliances().thenApply(playerAlliances -> {
          Set<String> seen = new HashSet<>();
          for (Alliance alliance : playerAlliances) {
-            if (alliance == null) {
+            if (!canUseAllianceForQuickActions(alliance)) {
                continue;
             }
 
@@ -55,6 +55,10 @@ public final class AllianceSelectionController {
                MessagingUtils.showMiniMessage(I18n.get("lsu.alliances.select.not_found", MiniMessage.miniMessage().escapeTags(allianceName)));
                return;
             }
+            if (!canUseAllianceForQuickActions(selectedAlliance)) {
+               MessagingUtils.showMiniMessage(I18n.get("lsu.alliances.select.unavailable"));
+               return;
+            }
 
             Config.setSelectedAllianceId(selectedAlliance.id());
             MessagingUtils.showMiniMessage(I18n.get("lsu.alliances.select.success", MiniMessage.miniMessage().escapeTags(selectedAlliance.getDisplayName())));
@@ -76,13 +80,12 @@ public final class AllianceSelectionController {
    }
 
    public static CompletableFuture<Suggestions> suggestCurrentAllianceMemberNames(String remaining, SuggestionsBuilder builder) {
-      String selectedAllianceId = Config.getSelectedAllianceId();
-      if (selectedAllianceId.isBlank()) {
+      if (!Config.hasSelectedAllianceId()) {
          return builder.buildFuture();
       }
 
       return AllianceManagers.fetchPlayerAlliances().thenApply(playerAlliances -> {
-         Alliance selectedAlliance = findAllianceById(playerAlliances, selectedAllianceId);
+         Alliance selectedAlliance = findSelectedAlliance(playerAlliances);
          if (selectedAlliance == null) {
             return builder.build();
          }
@@ -109,18 +112,15 @@ public final class AllianceSelectionController {
          return 0;
       }
 
-      String selectedAllianceId = Config.getSelectedAllianceId();
-      if (selectedAllianceId.isBlank()) {
+      if (!Config.hasSelectedAllianceId()) {
          MessagingUtils.showMiniMessage(I18n.get("lsu.alliances.select.none"));
          return 0;
       }
 
       AllianceManagers.fetchPlayerAlliances().thenAccept(playerAlliances -> {
          Minecraft.getInstance().execute(() -> {
-            Alliance selectedAlliance = findAllianceById(playerAlliances, selectedAllianceId);
+            Alliance selectedAlliance = resolveSelectedAllianceOrNotify(playerAlliances);
             if (selectedAlliance == null) {
-               Config.setSelectedAllianceId("");
-               MessagingUtils.showMiniMessage(I18n.get("lsu.alliances.select.stale"));
                return;
             }
 
@@ -166,18 +166,15 @@ public final class AllianceSelectionController {
          return 0;
       }
 
-      String selectedAllianceId = Config.getSelectedAllianceId();
-      if (selectedAllianceId.isBlank()) {
+      if (!Config.hasSelectedAllianceId()) {
          MessagingUtils.showMiniMessage(I18n.get("lsu.alliances.select.none"));
          return 0;
       }
 
       AllianceManagers.fetchPlayerAlliances().thenAccept(playerAlliances -> {
          Minecraft.getInstance().execute(() -> {
-            Alliance selectedAlliance = findAllianceById(playerAlliances, selectedAllianceId);
+            Alliance selectedAlliance = resolveSelectedAllianceOrNotify(playerAlliances);
             if (selectedAlliance == null) {
-               Config.setSelectedAllianceId("");
-               MessagingUtils.showMiniMessage(I18n.get("lsu.alliances.select.stale"));
                return;
             }
 
@@ -209,18 +206,15 @@ public final class AllianceSelectionController {
    }
 
    public static int listCurrentAllianceMembers() {
-      String selectedAllianceId = Config.getSelectedAllianceId();
-      if (selectedAllianceId.isBlank()) {
+      if (!Config.hasSelectedAllianceId()) {
          MessagingUtils.showMiniMessage(I18n.get("lsu.alliances.select.none"));
          return 0;
       }
 
       AllianceManagers.fetchPlayerAlliances().thenAccept(playerAlliances -> {
          Minecraft.getInstance().execute(() -> {
-            Alliance selectedAlliance = findAllianceById(playerAlliances, selectedAllianceId);
+            Alliance selectedAlliance = resolveSelectedAllianceOrNotify(playerAlliances);
             if (selectedAlliance == null) {
-               Config.setSelectedAllianceId("");
-               MessagingUtils.showMiniMessage(I18n.get("lsu.alliances.select.stale"));
                return;
             }
 
@@ -246,18 +240,15 @@ public final class AllianceSelectionController {
    }
 
    public static void toggleSelectedAllianceMember(String targetUuid, String targetName) {
-      String selectedAllianceId = Config.getSelectedAllianceId();
-      if (selectedAllianceId.isBlank()) {
+      if (!Config.hasSelectedAllianceId()) {
          MessagingUtils.showMiniMessage(I18n.get("lsu.alliances.select.none"));
          return;
       }
 
       AllianceManagers.fetchPlayerAlliances().thenAccept(playerAlliances -> {
          Minecraft.getInstance().execute(() -> {
-            Alliance selectedAlliance = findAllianceById(playerAlliances, selectedAllianceId);
+            Alliance selectedAlliance = resolveSelectedAllianceOrNotify(playerAlliances);
             if (selectedAlliance == null) {
-               Config.setSelectedAllianceId("");
-               MessagingUtils.showMiniMessage(I18n.get("lsu.alliances.select.stale"));
                return;
             }
 
@@ -302,6 +293,41 @@ public final class AllianceSelectionController {
          PlayerUuidResolver.updateCache(UUID.fromString(targetUuid), targetName);
       } catch (IllegalArgumentException ignored) {
       }
+   }
+
+   private static Alliance findSelectedAlliance(List<Alliance> playerAlliances) {
+      String selectedAllianceId = Config.getSelectedAllianceId();
+      if (selectedAllianceId.isBlank()) {
+         return null;
+      }
+
+      Alliance selectedAlliance = findAllianceById(playerAlliances, selectedAllianceId);
+      if (!canUseAllianceForQuickActions(selectedAlliance)) {
+         return null;
+      }
+      return selectedAlliance;
+   }
+
+   private static Alliance resolveSelectedAllianceOrNotify(List<Alliance> playerAlliances) {
+      String selectedAllianceId = Config.getSelectedAllianceId();
+      if (selectedAllianceId.isBlank()) {
+         MessagingUtils.showMiniMessage(I18n.get("lsu.alliances.select.none"));
+         return null;
+      }
+
+      Alliance selectedAlliance = findAllianceById(playerAlliances, selectedAllianceId);
+      if (selectedAlliance == null) {
+         Config.setSelectedAllianceId("");
+         MessagingUtils.showMiniMessage(I18n.get("lsu.alliances.select.stale"));
+         return null;
+      }
+      if (!canUseAllianceForQuickActions(selectedAlliance)) {
+         Config.setSelectedAllianceId("");
+         MessagingUtils.showMiniMessage(I18n.get("lsu.alliances.select.unavailable"));
+         return null;
+      }
+
+      return selectedAlliance;
    }
 
    private static AllianceMember findJoinedMemberByQuery(Alliance alliance, String query) {
@@ -400,6 +426,68 @@ public final class AllianceSelectionController {
 
    private static String escapeMiniMessage(String value) {
       return MiniMessage.miniMessage().escapeTags(value == null ? "" : value);
+   }
+
+   private static boolean canUseAllianceForQuickActions(Alliance alliance) {
+      if (!isConfiguredQuickActionAlliance(alliance)) {
+         return false;
+      }
+      if (alliance.isLocal()) {
+         return true;
+      }
+      return canEditAlliance(alliance);
+   }
+
+   private static boolean isConfiguredQuickActionAlliance(Alliance alliance) {
+      if (alliance == null) {
+         return false;
+      }
+
+      return !isUnsetSelectionValue(alliance.id())
+              && !isUnsetSelectionValue(alliance.name())
+              && !isUnsetSelectionValue(alliance.getDisplayName());
+   }
+
+   private static boolean isUnsetSelectionValue(String value) {
+      if (value == null) {
+         return true;
+      }
+
+      String trimmed = value.trim();
+      return trimmed.isEmpty() || trimmed.equalsIgnoreCase("NotSet");
+   }
+
+   private static boolean canEditAlliance(Alliance alliance) {
+      if (alliance == null) {
+         return false;
+      }
+      if (alliance.isLocal()) {
+         return true;
+      }
+
+      String currentPlayerUuid = getCurrentPlayerUuid();
+      if (currentPlayerUuid.isBlank()) {
+         return false;
+      }
+
+      AllianceMember currentPlayerMember = alliance.members().stream()
+              .filter(member -> member != null && normalizeUuid(member.uuid()).equalsIgnoreCase(currentPlayerUuid))
+              .findFirst()
+              .orElse(null);
+      if (currentPlayerMember != null && currentPlayerMember.hasAdminPermissions()) {
+         return true;
+      }
+
+      String ownerUuid = normalizeUuid(alliance.ownedBy());
+      return !ownerUuid.isBlank() && ownerUuid.equalsIgnoreCase(currentPlayerUuid);
+   }
+
+   private static String getCurrentPlayerUuid() {
+      Minecraft minecraft = Minecraft.getInstance();
+      if (minecraft.player == null) {
+         return "";
+      }
+      return normalizeUuid(minecraft.player.getStringUUID());
    }
 
    private static Alliance findAllianceById(List<Alliance> alliances, String allianceId) {
