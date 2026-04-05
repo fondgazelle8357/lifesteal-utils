@@ -29,12 +29,13 @@ public class JoinMultiplayerScreenMixin extends Screen {
       if (minecraft.screen instanceof GaiaConsentScreen) {
          return;
       }
+
       Screen currentScreen = this;
       minecraft.execute(() -> {
-         if (minecraft.screen != currentScreen) {
+         if (!GaiaConsentController.shouldShowConsent()) {
             return;
          }
-         if (!GaiaConsentController.shouldShowConsent()) {
+         if (minecraft.screen != currentScreen || minecraft.screen instanceof GaiaConsentScreen) {
             return;
          }
          minecraft.setScreen(new GaiaConsentScreen(currentScreen));

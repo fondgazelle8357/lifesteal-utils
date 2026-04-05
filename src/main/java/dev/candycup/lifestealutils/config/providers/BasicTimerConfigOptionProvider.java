@@ -11,9 +11,6 @@ import dev.candycup.lifestealutils.features.timers.BasicTimerManager;
 import java.util.Optional;
 
 public final class BasicTimerConfigOptionProvider implements ConfigOptionProvider {
-   private static final String COOLDOWNS_GROUP = "customenchantcooldowns";
-   private static final String FORMATS_GROUP = "customenchantformats";
-
    @Override
    public void registerOptions(ConfigOptionCollector collector) {
       BasicTimerManager timerManager = LifestealUtils.getBasicTimerManager();
@@ -60,7 +57,7 @@ public final class BasicTimerConfigOptionProvider implements ConfigOptionProvide
 
          collector.add(ConfigOptionDescriptor.bool(
                  "timers",
-                 COOLDOWNS_GROUP,
+                 "customenchantcooldowns",
                  id + "_enabled",
                  () -> false,
                  () -> Config.isBasicTimerEnabled(id),
@@ -72,14 +69,14 @@ public final class BasicTimerConfigOptionProvider implements ConfigOptionProvide
 
          collector.add(ConfigOptionDescriptor.minimessage(
                  "timers",
-                 FORMATS_GROUP,
+                 "customenchantmessages",
                  id + "_format",
                  () -> entry.definition().defaultFormat(),
                  () -> Config.getBasicTimerFormat(id, entry.definition().defaultFormat()),
                  value -> Config.setBasicTimerFormat(id, value)
          ).hardTranslation(
-                 timerName + " Format",
-                 "Customize how the %s timer is rendered. Use {{timer}} for the timer value.".formatted(timerName)
+                 timerName + " Message",
+                 "Customize the message, colors, and timer text for %s. Use {{timer}} for the timer value.".formatted(timerName)
          ));
       }
    }

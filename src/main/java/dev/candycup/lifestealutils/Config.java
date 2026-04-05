@@ -25,6 +25,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import static dev.candycup.lifestealutils.features.alliances.LocalAllianceMigrationUtils.ensureLocalAllianceMigration;
 import static dev.candycup.lifestealutils.integrations.xaero.XaeroPoiWaypointIntegration.isXaeroMinimapInstalled;
 
 public class Config {
@@ -87,31 +88,57 @@ public class Config {
 
    @Getter
    @Setter
-   @SerialEntry(comment = "Alliance name color as ARGB int")
-   private static int allianceNameColor = 0xFF55FF55;
+   @SerialEntry(comment = "Whether to render alliance prefixes in nametags")
+   @ConfigurableBoolean(location = "alliances.general.allianceprefixenabled")
+   private static boolean allianceNamePrefixEnabled = true;
 
    @Getter
    @Setter
-   @SerialEntry(comment = "Whether to color your own hitbox in third person while alliances are enabled")
-   @ConfigurableBoolean(location = "alliances.general.showownthirdpersonhitbox")
+   @SerialEntry(comment = "Whether to recolor vanilla F3+B hitboxes for alliance members")
+   @ConfigurableBoolean(location = "alliances.hitboxes.enabled")
+   private static boolean allianceHitboxColorsEnabled = true;
+
+   @Getter
+   @Setter
+   @SerialEntry(comment = "Whether to color your own vanilla hitbox while in third person")
+   @ConfigurableBoolean(location = "alliances.hitboxes.showownthirdpersonhitbox")
    private static boolean showOwnAllianceHitboxInThirdPerson = false;
 
    @Getter
    @Setter
-   @SerialEntry(comment = "Whether to render alliance prefixes in nametags")
-   private static boolean allianceNamePrefixEnabled = true;
+   @SerialEntry(comment = "Color used for your own vanilla hitbox while in third person")
+   @ConfigurableString(location = "alliances.hitboxes.owncolor")
+   private static String ownAllianceHitboxColor = "#55FF55";
 
+   @Getter
+   @Setter
    @SerialEntry(comment = "Alliance priority list for choosing which prefix and color to display")
+   @ConfigurableList(location = "alliances.allianceprefixpriority")
    private static List<String> alliancePrefixPriority = new ArrayList<>();
 
+   @SerialEntry(comment = "Selected alliance id used by quick-add actions")
+   private static String selectedAllianceId = "";
+
+   @Getter
+   @Setter
    @SerialEntry(comment = "List of allied player UUIDs")
    private static List<String> allianceUuids = new ArrayList<>();
 
+   @Getter
+   @Setter
    @SerialEntry(comment = "Cache of UUID to username mappings for alliance members")
    private static Map<String, String> uuidUsernameCache = new HashMap<>();
 
    @SerialEntry(comment = "Locally stored alliances")
    private static List<LocalAllianceConfigEntry> localAlliances = new ArrayList<>();
+
+   @SerialEntry(comment = "Per-alliance hitbox color overrides keyed by alliance id")
+   private static Map<String, String> allianceHitboxColorOverrides = new HashMap<>();
+
+   @Getter
+   @Setter
+   @SerialEntry(comment = "Whether legacy alliance UUIDs have been migrated to local alliances")
+   private static boolean localAllianceMigrationDone = false;
 
    @Getter
    @Setter
@@ -271,35 +298,32 @@ public class Config {
       HANDLER.save();
    }
 
-   public static List<String> getAlliancePrefixPriority() {
-      return alliancePrefixPriority == null ? new ArrayList<>() : new ArrayList<>(alliancePrefixPriority);
+   public static String getAllianceHitboxColorOverride(String allianceId, String fallback) {
+      if (allianceId == null || allianceId.isBlank()) {
+         return fallback;
+      }
+      if (allianceHitboxColorOverrides == null) {
+         allianceHitboxColorOverrides = new HashMap<>();
+      }
+      String value = allianceHitboxColorOverrides.get(allianceId);
+      return value == null || value.isBlank() ? fallback : value;
    }
 
-   public static void setAlliancePrefixPriority(List<String> priority) {
-      alliancePrefixPriority = priority == null ? new ArrayList<>() : new ArrayList<>(priority);
+   public static void setAllianceHitboxColorOverride(String allianceId, String color) {
+      if (allianceId == null || allianceId.isBlank()) {
+         return;
+      }
+      if (allianceHitboxColorOverrides == null) {
+         allianceHitboxColorOverrides = new HashMap<>();
+      }
+
+      String trimmed = color == null ? "" : color.trim();
+      if (trimmed.isEmpty()) {
+         allianceHitboxColorOverrides.remove(allianceId);
+      } else {
+         allianceHitboxColorOverrides.put(allianceId, trimmed);
+      }
       HANDLER.save();
-   }
-
-   public static List<String> getAllianceUuids() {
-      return allianceUuids == null ? new ArrayList<>() : new ArrayList<>(allianceUuids);
-   }
-
-   public static void setAllianceUuids(List<String> uuids) {
-      allianceUuids = uuids == null ? new ArrayList<>() : new ArrayList<>(uuids);
-      HANDLER.save();
-   }
-
-   public static Map<String, String> getUuidUsernameCache() {
-      return uuidUsernameCache == null ? new HashMap<>() : new HashMap<>(uuidUsernameCache);
-   }
-
-   public static void setUuidUsernameCache(Map<String, String> cache) {
-      uuidUsernameCache = cache == null ? new HashMap<>() : new HashMap<>(cache);
-      HANDLER.save();
-   }
-
-   public static String getAllianceNameColorTag() {
-      return String.format("#%06X", allianceNameColor & 0xFFFFFF);
    }
 
    public static boolean isBasicTimerEnabled(String id) {
@@ -349,7 +373,45 @@ public class Config {
    public static void load() {
       FeatureFlagController.ensureLoaded();
       HANDLER.load();
+      normalizeSelectedAllianceId();
       enforceGaiaConsentDependentStates();
+      ensureLocalAllianceMigration();
+   }
+
+   public static String getSelectedAllianceId() {
+      return sanitizeSelectedAllianceId(selectedAllianceId);
+   }
+
+   public static void setSelectedAllianceId(String allianceId) {
+      selectedAllianceId = sanitizeSelectedAllianceId(allianceId);
+      HANDLER.save();
+   }
+
+   public static boolean hasSelectedAllianceId() {
+      return !getSelectedAllianceId().isBlank();
+   }
+
+   private static void normalizeSelectedAllianceId() {
+      String sanitized = sanitizeSelectedAllianceId(selectedAllianceId);
+      if ((selectedAllianceId == null ? "" : selectedAllianceId).equals(sanitized)) {
+         return;
+      }
+
+      selectedAllianceId = sanitized;
+      HANDLER.save();
+   }
+
+   private static String sanitizeSelectedAllianceId(String allianceId) {
+      if (allianceId == null) {
+         return "";
+      }
+
+      String trimmed = allianceId.trim();
+      if (trimmed.isEmpty() || trimmed.equalsIgnoreCase("NotSet")) {
+         return "";
+      }
+
+      return trimmed;
    }
 
    /**
@@ -376,5 +438,4 @@ public class Config {
          }
       }
    }
-
 }

@@ -41,7 +41,6 @@ public class CreateAllianceScreen extends DrawableScreen {
    private static final Component CREATING_TEXT = Component.translatable("lsu.alliances.creating");
    private static final Component REQUIRED_TEXT = Component.translatable("lsu.alliances.create.error.required");
    private static final Component FAILED_TEXT = Component.translatable("lsu.alliances.create.error.failed");
-   private static final Component LIMIT_REACHED_TEXT = Component.translatable("lsu.alliances.create.limit_reached");
    private static final Component NAME_HINT = Component.translatable("lsu.alliances.create.hint.name");
 
    private static final int MAX_NAME_LENGTH = 30;
@@ -185,22 +184,8 @@ public class CreateAllianceScreen extends DrawableScreen {
       String motd = motdField.getValue().trim();
 
       setCreatingState(true);
-      AllianceManagers.fetchPlayerAlliances().thenAccept(alliances -> {
-         if (AllianceManagers.hasActiveAlliance(alliances)) {
-            this.minecraft.execute(() -> {
-               setCreatingState(false);
-               MessagingUtils.showMiniMessage(I18n.get("lsu.alliances.create.limit_reached"));
-               status.set(LIMIT_REACHED_TEXT, AlliancesListStyle.TEXT_ERROR);
-            });
-            return;
-         }
-
-         AllianceManagers.createAlliance(AllianceType.MODERN, name, prefix.isEmpty() ? null : prefix, color.isEmpty() ? null : color, description, motd).thenAccept(alliance -> {
-            this.minecraft.execute(() -> handleCreateResult(alliance));
-         });
-      }).exceptionally(error -> {
-         this.minecraft.execute(() -> handleCreateResult(null));
-         return null;
+      AllianceManagers.createAlliance(AllianceType.MODERN, name, prefix.isEmpty() ? null : prefix, color.isEmpty() ? null : color, description, motd).thenAccept(alliance -> {
+         this.minecraft.execute(() -> handleCreateResult(alliance));
       });
    }
 

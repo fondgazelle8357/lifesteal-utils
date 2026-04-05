@@ -7,12 +7,13 @@
     "PlayerEntityMixin"
   ],
   "client": [
+    "AllianceHitboxColorMixin",
     "AttackTrackerMixin",
     "ClientHandshakePacketListenerImplAuthInvoker",
     "ClientPacketListenerMixin",
     "DownloadedPackSourceMixin",
     "ConnectingScreenMixin",
-    "EntityHitboxDebugRendererMixin",
+    "GuiHotbarCompatibilityMixin",
     "ItemClusterMixin",
     "ItemRendererMixin",
     "JoinMultiplayerScreenMixin",
