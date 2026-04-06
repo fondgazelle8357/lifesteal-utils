@@ -2,13 +2,17 @@ package dev.candycup.lifestealutils.features.alliances;
 
 import com.mojang.brigadier.suggestion.Suggestions;
 import com.mojang.brigadier.suggestion.SuggestionsBuilder;
+import dev.candycup.lifestealutils.Config;
 import dev.candycup.lifestealutils.interapi.MessagingUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.PlayerInfo;
 
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Set;
 
 import java.util.concurrent.CompletableFuture;
 
@@ -27,6 +31,23 @@ public final class AllianceCommandController {
          }
          if (needle.isBlank() || name.toLowerCase().contains(needle)) {
             builder.suggest(name);
+         }
+      }
+      return builder.buildFuture();
+   }
+
+   public static CompletableFuture<Suggestions> suggestSelectableAllianceNames(String remaining, SuggestionsBuilder builder) {
+      String needle = remaining == null ? "" : remaining.trim().toLowerCase(Locale.ROOT);
+      Set<String> seen = new HashSet<>();
+      for (AllianceModels.AllianceRecord alliance : AllianceService.listEditable()) {
+         String name = alliance == null || alliance.data == null ? "" : alliance.data.name;
+         if (name == null || name.isBlank()) {
+            continue;
+         }
+         String suggestion = name.trim();
+         String lowered = suggestion.toLowerCase(Locale.ROOT);
+         if ((needle.isBlank() || lowered.contains(needle)) && seen.add(lowered)) {
+            builder.suggest(suggestion);
          }
       }
       return builder.buildFuture();
@@ -119,6 +140,24 @@ public final class AllianceCommandController {
        return 1;
     }
 
+   public static int selectAllianceByName(String rawAllianceName) {
+      String allianceName = rawAllianceName == null ? "" : rawAllianceName.trim();
+      if (allianceName.isEmpty()) {
+         MessagingUtils.showMiniMessage("<red>Please provide an alliance name.</red>");
+         return 0;
+      }
+
+      AllianceModels.AllianceRecord selectedAlliance = resolveEditableAllianceByName(allianceName);
+      if (selectedAlliance == null) {
+         MessagingUtils.showMiniMessage("<red>No alliance matches <white>" + escape(allianceName) + "</white>.</red>");
+         return 0;
+      }
+
+      Config.setSelectedAllianceId(selectedAlliance.clientId);
+      MessagingUtils.showMiniMessage("<green>Selected alliance: <white>" + escape(selectedAlliance.data.name) + "</white>.</green>");
+      return 1;
+   }
+
    public static int addMemberToAlliance(String usernameOrUuid, String allianceName, String listNameOrNull) {
       AllianceModels.AllianceRecord alliance = AllianceService.findByName(allianceName);
       if (alliance == null) {
@@ -207,11 +246,244 @@ public final class AllianceCommandController {
       return removeMemberFromAlliance(usernameOrUuid, parsed.allianceName());
    }
 
+   public static CompletableFuture<Suggestions> suggestCurrentAllianceMemberNames(String remaining, SuggestionsBuilder builder) {
+      AllianceModels.AllianceRecord alliance = resolveSelectedEditableAlliance(false);
+      if (alliance == null || alliance.data == null || alliance.data.lists == null) {
+         return builder.buildFuture();
+      }
+
+      String needle = remaining == null ? "" : remaining.trim().toLowerCase(Locale.ROOT);
+      Set<String> seen = new HashSet<>();
+      for (AllianceModels.AlliancePlayerList list : alliance.data.lists) {
+         if (list == null || list.members == null) {
+            continue;
+         }
+         for (AllianceModels.AllianceMember member : list.members) {
+            String suggestion = AllianceProfileCacheManager.displayNameForUuid(member == null ? null : member.uuid);
+            if (suggestion == null || suggestion.isBlank()) {
+               continue;
+            }
+            String lowered = suggestion.toLowerCase(Locale.ROOT);
+            if ((needle.isBlank() || lowered.contains(needle)) && seen.add(lowered)) {
+               builder.suggest(suggestion);
+            }
+         }
+      }
+      return builder.buildFuture();
+   }
+
+   public static int addSelectedAllianceMemberByName(String rawPlayerName) {
+      String playerName = rawPlayerName == null ? "" : rawPlayerName.trim();
+      if (playerName.isEmpty()) {
+         MessagingUtils.showMiniMessage("<red>Please provide a player name.</red>");
+         return 0;
+      }
+
+      AllianceModels.AllianceRecord alliance = resolveSelectedEditableAlliance(true);
+      if (alliance == null) {
+         return 0;
+      }
+
+      AllianceModels.AlliancePlayerList list = resolveQuickActionList(alliance);
+      if (list == null) {
+         MessagingUtils.showMiniMessage("<red>No usable list was found for <white>" + escape(alliance.data.name) + "</white>.</red>");
+         return 0;
+      }
+
+      return addMemberToAlliance(playerName, alliance.data.name, list.id);
+   }
+
+   public static int removeSelectedAllianceMemberByName(String rawPlayerName) {
+      String playerName = rawPlayerName == null ? "" : rawPlayerName.trim();
+      if (playerName.isEmpty()) {
+         MessagingUtils.showMiniMessage("<red>Please provide a player name.</red>");
+         return 0;
+      }
+
+      AllianceModels.AllianceRecord alliance = resolveSelectedEditableAlliance(true);
+      if (alliance == null) {
+         return 0;
+      }
+
+      String uuid = resolveAllianceMemberUuid(alliance, playerName);
+      if (uuid == null) {
+         MessagingUtils.showMiniMessage("<red>No member named <white>" + escape(playerName) + "</white> was found in <white>" + escape(alliance.data.name) + "</white>.</red>");
+         return 0;
+      }
+
+      String displayName = AllianceProfileCacheManager.displayNameForUuid(uuid);
+      boolean removed = AllianceService.removeMember(alliance, uuid);
+      if (!removed) {
+         MessagingUtils.showMiniMessage("<red>Couldn't remove <white>" + escape(displayName) + "</white> from <white>" + escape(alliance.data.name) + "</white>.</red>");
+         return 0;
+      }
+
+      AllianceSyncManager.publishOrUpdateAsync(alliance);
+      MessagingUtils.showMiniMessage("<green>Removed <white>" + escape(displayName) + "</white> from <white>" + escape(alliance.data.name) + "</white>.</green>");
+      return 1;
+   }
+
+   public static int listSelectedAllianceMembers() {
+      AllianceModels.AllianceRecord alliance = resolveSelectedEditableAlliance(true);
+      if (alliance == null) {
+         return 0;
+      }
+
+      List<String> names = new ArrayList<>();
+      Set<String> seen = new HashSet<>();
+      for (AllianceModels.AlliancePlayerList list : alliance.data.lists) {
+         if (list == null || list.members == null) {
+            continue;
+         }
+         for (AllianceModels.AllianceMember member : list.members) {
+            String name = AllianceProfileCacheManager.displayNameForUuid(member == null ? null : member.uuid);
+            if (name == null || name.isBlank()) {
+               continue;
+            }
+            String lowered = name.toLowerCase(Locale.ROOT);
+            if (seen.add(lowered)) {
+               names.add(name);
+            }
+         }
+      }
+
+      names.sort(String.CASE_INSENSITIVE_ORDER);
+      if (names.isEmpty()) {
+         MessagingUtils.showMiniMessage("<yellow><white>" + escape(alliance.data.name) + "</white> has no members.</yellow>");
+         return 1;
+      }
+
+      StringBuilder message = new StringBuilder("<green>")
+              .append(escape(alliance.data.name))
+              .append("</green><gray>: </gray>");
+      for (int i = 0; i < names.size(); i++) {
+         if (i > 0) {
+            message.append("<gray>, </gray>");
+         }
+         message.append("<white>").append(escape(names.get(i))).append("</white>");
+      }
+      MessagingUtils.showMiniMessage(message.toString());
+      return 1;
+   }
+
+   public static void toggleSelectedAllianceMember(String targetUuid, String targetName) {
+      AllianceModels.AllianceRecord alliance = resolveSelectedEditableAlliance(true);
+      if (alliance == null) {
+         return;
+      }
+
+      String normalizedUuid = AllianceProfileCacheManager.normalizeUuid(targetUuid);
+      if (normalizedUuid == null) {
+         MessagingUtils.showMiniMessage("<red>Unable to resolve player <white>" + escape(targetName) + "</white>.</red>");
+         return;
+      }
+
+      if (allianceContainsMember(alliance, normalizedUuid)) {
+         boolean removed = AllianceService.removeMember(alliance, normalizedUuid);
+         if (removed) {
+            AllianceSyncManager.publishOrUpdateAsync(alliance);
+            MessagingUtils.showMiniMessage("<green>Removed <white>" + escape(targetName) + "</white> from <white>" + escape(alliance.data.name) + "</white>.</green>");
+         } else {
+            MessagingUtils.showMiniMessage("<red>Couldn't remove <white>" + escape(targetName) + "</white> from <white>" + escape(alliance.data.name) + "</white>.</red>");
+         }
+         return;
+      }
+
+      AllianceModels.AlliancePlayerList list = resolveQuickActionList(alliance);
+      if (list == null) {
+         MessagingUtils.showMiniMessage("<red>No usable list was found for <white>" + escape(alliance.data.name) + "</white>.</red>");
+         return;
+      }
+
+      AllianceProfileCacheManager.cache(targetName, normalizedUuid);
+      boolean added = AllianceService.addMember(alliance, list.id, normalizedUuid);
+      if (added) {
+         AllianceSyncManager.publishOrUpdateAsync(alliance);
+         MessagingUtils.showMiniMessage("<green>Added <white>" + escape(targetName) + "</white> to <white>" + escape(alliance.data.name) + "</white>.</green>");
+      } else {
+         MessagingUtils.showMiniMessage("<red>Couldn't add <white>" + escape(targetName) + "</white> to <white>" + escape(alliance.data.name) + "</white>.</red>");
+      }
+   }
+
    private static String escape(String input) {
       if (input == null) {
          return "";
       }
       return input.replace("<", "").replace(">", "");
+   }
+
+   private static AllianceModels.AllianceRecord resolveEditableAllianceByName(String allianceName) {
+      AllianceModels.AllianceRecord alliance = AllianceService.findByName(allianceName);
+      if (alliance == null || !alliance.canEdit) {
+         return null;
+      }
+      return alliance;
+   }
+
+   private static AllianceModels.AllianceRecord resolveSelectedEditableAlliance(boolean notify) {
+      String selectedAllianceId = Config.getSelectedAllianceId();
+      if (selectedAllianceId == null || selectedAllianceId.isBlank()) {
+         if (notify) {
+            MessagingUtils.showMiniMessage("<red>We're not sure which alliance you want to use. Select one first with <white>/lsu alliances select <alliance name></white>.</red>");
+         }
+         return null;
+      }
+
+      AllianceModels.AllianceRecord alliance = AllianceService.findByClientId(selectedAllianceId);
+      if (alliance == null) {
+         Config.setSelectedAllianceId("");
+         if (notify) {
+            MessagingUtils.showMiniMessage("<red>Your selected alliance no longer exists. Select another with <white>/lsu alliances select <alliance name></white>.</red>");
+         }
+         return null;
+      }
+      if (!alliance.canEdit) {
+         Config.setSelectedAllianceId("");
+         if (notify) {
+            MessagingUtils.showMiniMessage("<red>Your selected alliance can't be used for quick ally actions. Select one you can manage with <white>/lsu alliances select <alliance name></white>.</red>");
+         }
+         return null;
+      }
+      return alliance;
+   }
+
+   private static AllianceModels.AlliancePlayerList resolveQuickActionList(AllianceModels.AllianceRecord alliance) {
+      AllianceModels.AlliancePlayerList resolved = AllianceService.resolveList(alliance, null);
+      if (resolved != null) {
+         return resolved;
+      }
+      if (alliance != null && alliance.data != null && alliance.data.lists != null && !alliance.data.lists.isEmpty()) {
+         return alliance.data.lists.get(0);
+      }
+      return null;
+   }
+
+   private static String resolveAllianceMemberUuid(AllianceModels.AllianceRecord alliance, String playerNameOrUuid) {
+      String normalizedQueryUuid = AllianceProfileCacheManager.normalizeUuid(playerNameOrUuid);
+      String loweredQuery = playerNameOrUuid.toLowerCase(Locale.ROOT);
+      for (AllianceModels.AlliancePlayerList list : alliance.data.lists) {
+         if (list == null || list.members == null) {
+            continue;
+         }
+         for (AllianceModels.AllianceMember member : list.members) {
+            String memberUuid = AllianceProfileCacheManager.normalizeUuid(member == null ? null : member.uuid);
+            if (memberUuid == null) {
+               continue;
+            }
+            if (normalizedQueryUuid != null && memberUuid.equalsIgnoreCase(normalizedQueryUuid)) {
+               return memberUuid;
+            }
+            String cachedName = AllianceProfileCacheManager.getCachedNameByUuid(memberUuid);
+            if (cachedName != null && cachedName.toLowerCase(Locale.ROOT).equals(loweredQuery)) {
+               return memberUuid;
+            }
+         }
+      }
+      return null;
+   }
+
+   private static boolean allianceContainsMember(AllianceModels.AllianceRecord alliance, String normalizedUuid) {
+      return resolveAllianceMemberUuid(alliance, normalizedUuid) != null;
    }
 
    private static ParsedAddTarget parseAddTarget(String raw) {

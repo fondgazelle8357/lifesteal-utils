@@ -1,5 +1,6 @@
 package dev.candycup.lifestealutils.config;
 
+import dev.candycup.lifestealutils.config.providers.AllianceHitboxConfigOptionProvider;
 import dev.candycup.lifestealutils.config.providers.BasicTimerConfigOptionProvider;
 
 import java.util.ArrayList;
@@ -20,6 +21,7 @@ public final class ConfigDescriptorRegistry {
       }
 
       registerProvider(new BasicTimerConfigOptionProvider());
+      registerProvider(new AllianceHitboxConfigOptionProvider());
       defaultsRegistered = true;
    }
 
